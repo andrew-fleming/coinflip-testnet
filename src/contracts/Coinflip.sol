@@ -5,81 +5,108 @@ pragma solidity =0.5.16;
 contract Coinflip is usingProvable{
     
     struct Bet {
-        address payable playerAddress;
+        address playerAddress;
         uint betValue;
         uint headsTails;
-        uint playerWinnings;
     }
     
-    mapping(address => Bet) public waiting;
-    mapping(address => Bet) public afterWaiting;
-    mapping(address => uint) public winningsBalance;
+    mapping(address => uint) private playerWinnings;
+    mapping (address => Bet) private waiting;
+    mapping (bytes32 => address) private afterWaiting;
+    
+    event logNewProvableQuery(string description);
+    event outcome(string description);
+    
+    uint public contractBalance;
+    uint256 constant NUM_RANDOM_BYTES_REQUESTED = 1;
+    
+    address payable public owner = msg.sender;
+
     
     constructor() public payable{
         owner = msg.sender;
         contractBalance += msg.value;
     }
     
-    address payable public owner = msg.sender;
-    uint public contractBalance;
-    uint public latestNumber;
     
-    function random() private view returns(uint){
-        return (now % 2);
+    modifier onlyOwner() {
+        require(owner == msg.sender);
+        _;
     }
     
-    function flip(uint oneZero) public payable {
+    
+function flip(uint256 oneZero) public payable {
+        //Minimum .001 eth to maximum 10 eth
+        require(contractBalance > msg.value, "We don't have enough funds");
+
+        //Calling provable library function
+        uint256 QUERY_EXECUTION_DELAY = 0;
+        uint256 GAS_FOR_CALLBACK = 200000;
+        bytes32 queryId = provable_newRandomDSQuery(
+            QUERY_EXECUTION_DELAY,
+            NUM_RANDOM_BYTES_REQUESTED,
+            GAS_FOR_CALLBACK
+            );
+        emit logNewProvableQuery("Message sent. Waiting for an answer...");
+        
+        afterWaiting[queryId] = msg.sender;
+
+
+        //Adding user to mapping with address, bet, and queryID
         Bet memory newBetter;
+        newBetter.playerAddress = msg.sender;
+        newBetter.betValue = msg.value;
+        newBetter.headsTails = oneZero;
+
         waiting[msg.sender] = newBetter;
-        waiting[msg.sender].playerAddress = msg.sender;
-        waiting[msg.sender].betValue = msg.value;
-        waiting[msg.sender].headsTails = oneZero;
-        
-        contractBalance += msg.value;
-        
-        __callback(msg.sender);
     }
     
-    function __callback(address _address) public payable {
-        Bet memory postBetter;
-        afterWaiting[_address] = postBetter;
-        afterWaiting[_address].playerAddress = waiting[_address].playerAddress;
-        afterWaiting[_address].betValue = waiting[_address].betValue;
-        afterWaiting[_address].headsTails = waiting[_address].headsTails;
+    function __callback(bytes32 _queryId, string memory _result /*bytes memory _proof*/) public {
+        require(msg.sender == provable_cbAddress());
         
-        delete(waiting[_address].playerAddress);
-        waiting[_address].betValue = 0;
-        waiting[_address].headsTails = 2;
+        uint256 flipResult = uint256(keccak256(abi.encodePacked(_result))) % 2;
+
+        //linking new mapping with new struct
+        address _player = afterWaiting[_queryId];
         
-        latestNumber = random();
-        if(latestNumber == afterWaiting[_address].headsTails){
-            uint winAmount = (afterWaiting[_address].betValue * 2);
-            contractBalance -= winAmount;
-            afterWaiting[_address].betValue = 0;
-            afterWaiting[_address].playerWinnings = winAmount;
-            afterWaiting[_address].headsTails = 2;
-            winningsBalance[_address] += afterWaiting[_address].playerWinnings;
-            afterWaiting[_address].playerWinnings = 0;
+        Bet memory postBet = waiting[_player];
+        
+        if(flipResult == postBet.headsTails){
+            uint winAmount = postBet.betValue * 2;
+            contractBalance -= postBet.betValue;
+            playerWinnings[_player] += winAmount;
+            emit outcome("You won!");
         } else {
-            afterWaiting[_address].betValue = 0;
-            afterWaiting[_address].headsTails = 2;
+            contractBalance += postBet.betValue;
+            emit outcome("You lost...");
         }
     }
     
-    function withdrawAll() public {
-        require(msg.sender == owner, "You are not the owner");
+    function withdrawUserWinnings() public {
+        require(playerWinnings[msg.sender] > 0, "No funds to withdraw");
+        uint toTransfer = playerWinnings[msg.sender];
+        playerWinnings[msg.sender] = 0;
+        msg.sender.transfer(toTransfer);
+    }
+    
+    function getWinningsBalance() public view returns(uint){
+        return playerWinnings[msg.sender];
+    }
+    
+    //Owner functions
+    
+    function fundContract() public payable onlyOwner {
+        contractBalance += msg.value;
+    }
+    
+    function fundWinnings() public payable onlyOwner {
+        playerWinnings[msg.sender] += msg.value;
+    }
+    
+    function withdrawAll() public onlyOwner {
         uint toTransfer = contractBalance;
         contractBalance = 0;
         owner.transfer(toTransfer);
     }
-    
-    function withdrawUserWinnings() public {
-        uint toTransfer = winningsBalance[msg.sender];
-        winningsBalance[msg.sender] = 0;
-        msg.sender.transfer(toTransfer);
-        
-    }
-    
-    
 
 }
