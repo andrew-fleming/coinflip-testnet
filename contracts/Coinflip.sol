@@ -1,9 +1,9 @@
+pragma solidity =0.5.16;
+
 import "./provableAPI_0.5.sol";
 import "./SafeMath.sol";
 
-pragma solidity =0.5.16;
-
-contract Coinflip is usingProvable {
+contract CoinflipTestnet is usingProvable {
     
     using SafeMath for uint;
     
