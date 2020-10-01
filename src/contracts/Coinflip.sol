@@ -1,8 +1,11 @@
 import "./provableAPI_0.5.sol";
+import "./SafeMath.sol";
 
 pragma solidity =0.5.16;
 
-contract Coinflip is usingProvable{
+contract Coinflip is usingProvable {
+    
+    using SafeMath for uint;
     
     struct Bet {
         address playerAddress;
@@ -25,7 +28,7 @@ contract Coinflip is usingProvable{
     
     constructor() public payable{
         owner = msg.sender;
-        contractBalance += msg.value;
+        contractBalance = msg.value;
     }
     
     
@@ -64,7 +67,7 @@ function flip(uint256 oneZero) public payable {
     function __callback(bytes32 _queryId, string memory _result /*bytes memory _proof*/) public {
         require(msg.sender == provable_cbAddress());
         
-        uint256 flipResult = uint256(keccak256(abi.encodePacked(_result))) % 2;
+        uint256 flipResult = SafeMath.mod(uint256(keccak256(abi.encodePacked(_result))), 2);
 
         //linking new mapping with new struct
         address _player = afterWaiting[_queryId];
@@ -72,12 +75,12 @@ function flip(uint256 oneZero) public payable {
         Bet memory postBet = waiting[_player];
         
         if(flipResult == postBet.headsTails){
-            uint winAmount = postBet.betValue * 2;
-            contractBalance -= postBet.betValue;
-            playerWinnings[_player] += winAmount;
+            uint winAmount = SafeMath.mul(postBet.betValue, 2);
+            contractBalance = SafeMath.sub(contractBalance, postBet.betValue);
+            playerWinnings[_player] = SafeMath.add(playerWinnings[_player], winAmount);
             emit outcome("You won!");
         } else {
-            contractBalance += postBet.betValue;
+            contractBalance = SafeMath.add(contractBalance, postBet.betValue);
             emit outcome("You lost...");
         }
     }
@@ -96,11 +99,11 @@ function flip(uint256 oneZero) public payable {
     //Owner functions
     
     function fundContract() public payable onlyOwner {
-        contractBalance += msg.value;
+        contractBalance = SafeMath.add(contractBalance, msg.value);
     }
     
     function fundWinnings() public payable onlyOwner {
-        playerWinnings[msg.sender] += msg.value;
+        playerWinnings[msg.sender] = SafeMath.add(playerWinnings[msg.sender], msg.value);
     }
     
     function withdrawAll() public onlyOwner {
